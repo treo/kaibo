@@ -6,7 +6,7 @@ reflection, flows, or the server.
 
 ## What this is
 
-A Kotlin port of the `xaibo` agent framework (`../xaibo`, Python). It kept
+A Kotlin port of the Python `xaibo` agent framework (`../xaibo`). It kept
 the framework's core ideas — protocol-based dependency injection, transparent
 module proxies with an event stream, agents defined declaratively (YAML files
 **and** a Kotlin DSL over one shared config model) — and dropped the Python
@@ -44,9 +44,9 @@ periphery behind SDKs it doesn't need (see *Out of scope*).
      `curl -X POST localhost:8000/v1/chat/completions -d '{"model":"demo",
      "messages":[{"role":"user","content":"hi"}]}'}` → `"6 times 7 is 42."`
      (proves YAML loading + tool loop + server still work end to end)
-  3. With a real key: `XAIBO_TEST_API_KEY=<alibaba key from
+  3. With a real key: `KAIBO_TEST_API_KEY=<alibaba key from
      ~/.pi/agent/models.json, providers.alibaba.apiKey> gradle test
-     --tests xaibo.RealLLMTest --rerun-tasks`
+     --tests kaibo.RealLLMTest --rerun-tasks`
   4. `scc .` cost check
 - **A `gradle test --tests X` invocation that fails to compile runs STALE
   classes and looks deceptively consistent.** Always confirm
@@ -55,14 +55,14 @@ periphery behind SDKs it doesn't need (see *Out of scope*).
 ## Architecture map
 
 ```
-src/main/kotlin/xaibo/
+src/main/kotlin/kaibo/
   Models.kt          plain data classes; EventType/Event; Response events
   Protocols.kt       the interfaces modules are wired by (LLM, Response, …)
   Stream.kt          StreamFrame vocabulary + StreamAssembler
   Config.kt          AgentConfig + populateImplicits (auto-wiring) + YAML (kaml)
   AgentDsl.kt        agentConfig { } DSL — produces the SAME config objects
   Exchange.kt        instantiation, injection, EventProxy (JDK proxy)
-  Registry.kt        Registry, Xaibo facade, Agent
+  Registry.kt        Registry, Kaibo facade, Agent
   Json.kt            JSON<->Kotlin bridging + internal accessors
   primitives/        LLMs, orchestrators, tools, memory, mock
   server/            OpenAICompatServer (JDK http) + main()
@@ -114,9 +114,9 @@ Invariants worth preserving:
 - **Tool timeouts can't interrupt blocked JVM code.** `call_timeout_ms`
   releases the *agent*; the abandoned function finishes unseen. Documented;
   don't pretend otherwise.
-- Inside test sources in `package xaibo`, `xaibo.examples.X` references are
+- Inside test sources in `package kaibo`, `kaibo.examples.X` references are
   shadowed — import the class.
-- `@XaiboTool` `description` is a required annotation argument. Keep it so:
+- `@KaiboTool` `description` is a required annotation argument. Keep it so:
   undescribed tools are silently worse agents.
 
 ## Out of scope — do not "helpfully" port these

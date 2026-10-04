@@ -4,7 +4,7 @@ plugins {
     application
 }
 
-group = "dev.xaibo"
+group = "dev.kaibo"
 version = "0.1.0"
 
 repositories { mavenCentral() }
@@ -23,4 +23,4 @@ kotlin { jvmToolchain(21) }
 
 tasks.test { useJUnitPlatform() }
 
-application { mainClass.set("xaibo.server.OpenAICompatServerKt") }
+application { mainClass.set("kaibo.server.OpenAICompatServerKt") }

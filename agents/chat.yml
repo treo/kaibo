@@ -3,22 +3,22 @@
 id: chat
 description: A tool-using chat assistant
 modules:
-  - module: xaibo.primitives.SimpleConversation
+  - module: kaibo.primitives.SimpleConversation
     id: history
     config:
       max_history: 40
-  - module: xaibo.primitives.OpenAILLM
+  - module: kaibo.primitives.OpenAILLM
     id: llm
     config:
       model: gpt-4.1-nano
-  - module: xaibo.primitives.FunctionToolProvider
+  - module: kaibo.primitives.FunctionToolProvider
     id: kotlin-tools
     config:
       tool_classes:
-        - xaibo.examples.DemoTools
-  - module: xaibo.primitives.ToolCollector
+        - kaibo.examples.DemoTools
+  - module: kaibo.primitives.ToolCollector
     id: tools
-  - module: xaibo.primitives.SimpleToolOrchestrator
+  - module: kaibo.primitives.SimpleToolOrchestrator
     id: orchestrator
     config:
       max_thoughts: 10

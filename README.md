@@ -1,6 +1,6 @@
-# xaibo (Kotlin)
+# Kaibo
 
-A Kotlin port of the [xaibo](../xaibo) agent framework: protocol-based
+A Kotlin port of the Python [xaibo](../xaibo) agent framework: protocol-based
 dependency injection, transparent module proxies with an event stream, YAML-
 and DSL-defined agents, tool orchestration, vector memory, and an
 OpenAI-compatible server.
@@ -19,9 +19,9 @@ The suite is key-free by design; provider fidelity against a *real* LLM is
 documented by opt-in tests that skip unless a key is present:
 
 ```bash
-XAIBO_TEST_API_KEY=sk-... gradle test --tests xaibo.RealLLMTest
+KAIBO_TEST_API_KEY=sk-... gradle test --tests kaibo.RealLLMTest
 # defaults to Alibaba DashScope (OpenAI-compatible, qwen3.8-flash);
-# override with XAIBO_TEST_BASE_URL / XAIBO_TEST_MODEL
+# override with KAIBO_TEST_BASE_URL / KAIBO_TEST_MODEL
 ```
 
 `agents/demo.yml` is key-free (scripted MockLLM); `agents/chat.yml`, `agents/react.yml` and `agents/real-llm.yml` need `OPENAI_API_KEY` (any OpenAI-compatible gateway via `base_url`). Point any OpenAI client at the server and use the agent id as the model name:
@@ -38,11 +38,11 @@ Two roads to the same config object. A YAML file (`AgentConfig.loadDirectory`
 ```yaml
 id: chat
 modules:
-  - module: xaibo.primitives.SimpleConversation
+  - module: kaibo.primitives.SimpleConversation
     id: history
-  - module: xaibo.primitives.OpenAILLM
+  - module: kaibo.primitives.OpenAILLM
     id: llm
-  - module: xaibo.primitives.SimpleToolOrchestrator
+  - module: kaibo.primitives.SimpleToolOrchestrator
     id: orchestrator
 ```
 
@@ -70,13 +70,13 @@ streaming responder.
 
 | Python xaibo | This port |
 |---|---|
-| pydantic models + `typing.Protocol` | data classes + Kotlin interfaces (`xaibo.Protocols.kt`) |
+| pydantic models + `typing.Protocol` | data classes + Kotlin interfaces (`kaibo.Protocols.kt`) |
 | `inspect` annotations + `importlib` | `kotlin-reflect` primary constructors (`injectableParams`) |
 | `Proxy` / `MethodProxy` duck typing | JDK dynamic proxy (`EventProxy`) emitting `CALL/RESULT/EXCEPTION/YIELD` events; suspend and `Flow` calls fully observed |
 | async generators (`yield` streams) | `kotlinx.coroutines.flow.Flow<String>` |
 | `BinaryIO` attachments | `ByteArray` attachments |
 | YAML via pydantic-yaml | YAML via kaml (`AgentConfig.fromYaml/loadDirectory`) |
-| docstring-parsed Python functions as tools | `@XaiboTool` annotated Kotlin functions (`FunctionToolProvider`) |
+| docstring-parsed Python functions as tools | `@KaiboTool` annotated Kotlin functions (`FunctionToolProvider`) |
 | FastAPI/uvicorn + OpenAI adapter | JDK `com.sun.net.httpserver` (`OpenAICompatServer`), incl. SSE streaming |
 | tiktoken / numpy / pickle memory stack | word-window chunker / `JsonVectorIndex` (linear cosine over `DoubleArray`, JSON persistence) |
 
@@ -86,8 +86,8 @@ One annotated function; the annotations are what the model reads:
 
 ```kotlin
 class WeatherTools {
-    @XaiboTool(description = "Gets the current weather for a city")
-    fun weather(@XaiboParam("City name, e.g. 'Amsterdam'") city: String) =
+    @KaiboTool(description = "Gets the current weather for a city")
+    fun weather(@KaiboParam("City name, e.g. 'Amsterdam'") city: String) =
         fetchWeather(city)   // any JSON-shaped return value works
 }
 ```
@@ -135,22 +135,22 @@ server-module injection, agent-scoped modules, event listeners.
 ## Layout
 
 ```
-src/main/kotlin/xaibo/
+src/main/kotlin/kaibo/
   Models.kt Protocols.kt        # shared vocabulary
   Config.kt AgentDsl.kt         # YAML model + implicit wiring + DSL
   Exchange.kt                   # instantiation, injection, EventProxy
-  Registry.kt                   # Registry, Xaibo, Agent
+  Registry.kt                   # Registry, Kaibo, Agent
   Json.kt                       # JSON <-> Kotlin bridging
   primitives/                   # LLMs, orchestrators, tools, memory
   server/OpenAICompatServer.kt  # HTTP façade + main()
   examples/DemoTools.kt
 agents/                         # ready-to-serve agent configs
-src/test/kotlin/xaibo/          # 48 tests documenting the framework's contracts
+src/test/kotlin/kaibo/          # 48 tests documenting the framework's contracts
 ```
 
 ## Notes for maintainers
 
-- `XAIBO_DEBUG=1` logs every module call/result event.
+- `KAIBO_DEBUG=1` logs every module call/result event.
 - Tests stay behavioural: they wire real agents through the exchange and
   assert on responses, events, and tool round-trips — never on internals.
 - Kotlin 2.2 / JVM 21 toolchain, deps: coroutines, kotlinx-serialization,

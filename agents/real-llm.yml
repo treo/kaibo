@@ -4,19 +4,19 @@
 id: real-llm
 description: Tool-using agent on a real LLM
 modules:
-  - module: xaibo.primitives.SimpleConversation
+  - module: kaibo.primitives.SimpleConversation
     id: history
-  - module: xaibo.primitives.OpenAILLM
+  - module: kaibo.primitives.OpenAILLM
     id: llm
     config:
       base_url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
       model: qwen3.8-flash
-  - module: xaibo.primitives.FunctionToolProvider
+  - module: kaibo.primitives.FunctionToolProvider
     id: tools
     config:
       tool_classes:
-        - xaibo.examples.DemoTools
-  - module: xaibo.primitives.SimpleToolOrchestrator
+        - kaibo.examples.DemoTools
+  - module: kaibo.primitives.SimpleToolOrchestrator
     id: orchestrator
     config:
       max_thoughts: 6

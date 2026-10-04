@@ -2,9 +2,9 @@
 id: demo
 description: Deterministic demo agent (MockLLM), no API keys needed
 modules:
-  - module: xaibo.primitives.SimpleConversation
+  - module: kaibo.primitives.SimpleConversation
     id: history
-  - module: xaibo.primitives.MockLLM
+  - module: kaibo.primitives.MockLLM
     id: llm
     config:
       responses:
@@ -16,10 +16,10 @@ modules:
                 a: 6
                 b: 7
         - content: "6 times 7 is 42."
-  - module: xaibo.primitives.FunctionToolProvider
+  - module: kaibo.primitives.FunctionToolProvider
     id: tools
     config:
       tool_classes:
-        - xaibo.examples.DemoTools
-  - module: xaibo.primitives.SimpleToolOrchestrator
+        - kaibo.examples.DemoTools
+  - module: kaibo.primitives.SimpleToolOrchestrator
     id: orchestrator
