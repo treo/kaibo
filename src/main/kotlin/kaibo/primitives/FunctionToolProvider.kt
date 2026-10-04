@@ -3,19 +3,17 @@ package kaibo.primitives
 import kaibo.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeout
+import kotlin.coroutines.Continuation
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KParameter
 import kotlin.reflect.KVisibility
+import kotlin.reflect.full.callSuspendBy
 import kotlin.reflect.full.declaredMemberFunctions
 
-/** Marks a function as an kaibo tool. `description` is required — a tool the
- * model cannot read about is a tool the model cannot use well; the compiler
- * refuses to build one silently. */
-@Target(AnnotationTarget.FUNCTION)
 annotation class KaiboTool(val description: String, val name: String = "")
 
 /** Documents a tool parameter; lands in the JSON schema the model sees. */
@@ -33,8 +31,12 @@ annotation class KaiboParam(val description: String = "")
  * Long-running tools: functions run on [Dispatchers.IO] so the agent's own
  * coroutine stays a good citizen; `call_timeout_ms` caps how LONG the agent
  * *waits*, answering with a failed [ToolResult] instead of stalling the turn.
- * A blocked function cannot be interrupted — after a timeout it runs to
- * completion unseen, so tool side effects should be idempotent.
+ *
+ * A *blocking* function cannot be interrupted — after a timeout it runs to
+ * completion unseen, so its side effects should be idempotent. A `suspend`
+ * function is different: it is cancelled with the call, so a tool that does
+ * real I/O (HTTP, a database, a shell) should be `suspend` and check its own
+ * cancellation.
  */
 class FunctionToolProvider(val config: Map<String, Any?> = emptyMap()) : ToolProviderProtocol {
 
@@ -81,7 +83,12 @@ class FunctionToolProvider(val config: Map<String, Any?> = emptyMap()) : ToolPro
                 }
                 val name = ann.name.ifEmpty { fn.name }
                 if (name in out) continue // a more-derived annotation already claimed it
-                val params = fn.parameters.filter { it.kind == KParameter.Kind.VALUE }
+                // a suspend function's continuation is a value parameter to
+                // reflection; it is not an argument the model may supply
+                val params = fn.parameters.filter {
+                    it.kind == KParameter.Kind.VALUE &&
+                        (it.type.classifier as? KClass<*>) != Continuation::class
+                }
                 out[name] = Entry(
                     Tool(
                         name = name,
@@ -126,16 +133,15 @@ class FunctionToolProvider(val config: Map<String, Any?> = emptyMap()) : ToolPro
             return ToolResult(success = false, error = "${e::class.simpleName}: ${e.message}")
         }
         return try {
-            val deferred = ioScope.async {
-                val callArgs = HashMap<KParameter, Any?>()
-                entry.fn.parameters.firstOrNull { it.kind == KParameter.Kind.INSTANCE }?.let { callArgs[it] = entry.receiver }
-                callArgs.putAll(args)
-                entry.fn.callBy(callArgs)
-            }
+            val deferred = ioScope.async { invoke(entry, args) }
             val value = try {
                 if (callTimeoutMs != null) withTimeout(callTimeoutMs) { deferred.await() }
                 else deferred.await()
             } catch (e: TimeoutCancellationException) {
+                // A suspend tool sees this cancellation and stops; a blocked one
+                // cannot be interrupted and finishes unseen — that difference is
+                // why real I/O tools should be suspend.
+                deferred.cancel()
                 return ToolResult(false, error = "tool '$toolName' timed out after ${callTimeoutMs}ms")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e // the agent itself was cancelled; do not swallow
@@ -144,6 +150,24 @@ class FunctionToolProvider(val config: Map<String, Any?> = emptyMap()) : ToolPro
         } catch (e: Exception) {
             ToolResult(success = false, error = "${e::class.simpleName}: ${e.message}")
         }
+    }
+
+    /**
+     * A suspend tool is called as one, so cancellation reaches the tool and
+     * `call_timeout_ms` is a deadline the tool observes rather than a wait after
+     * which the agent walks away and the call keeps running. Plain functions keep
+     * the reflective call — and the "abandoned, still running" caveat above.
+     */
+    private suspend fun invoke(entry: Entry, args: Map<KParameter, Any?>): Any? = try {
+        val callArgs = HashMap<KParameter, Any?>()
+        entry.fn.parameters.firstOrNull { it.kind == KParameter.Kind.INSTANCE }
+            ?.let { callArgs[it] = entry.receiver }
+        callArgs.putAll(args)
+        if (entry.fn.isSuspend) entry.fn.callSuspendBy(callArgs) else entry.fn.callBy(callArgs)
+    } catch (e: java.lang.reflect.InvocationTargetException) {
+        // reflection wraps the tool's own failure; report the cause, or the agent
+        // sees "InvocationTargetException: null" instead of what actually broke
+        throw e.targetException ?: e
     }
 
     private fun jsonType(cls: KClass<*>?) = when (cls) {

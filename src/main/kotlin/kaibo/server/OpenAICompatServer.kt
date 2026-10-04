@@ -9,6 +9,37 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 
 /**
+ * A host's per-turn identity, injected into [OpenAICompatServer].
+ *
+ * The OpenAI surface answers from the request body alone, which is right when an
+ * agent is embedded in someone else's app. A host that runs agents *in channels*
+ * knows more: which conversation or task a turn belongs to, whether that
+ * conversation's history survives turns, and what authority the turn carries.
+ * Kaibo can't know any of that, but it can stop pretending not to: every hook has
+ * a default that reproduces today's stateless behaviour.
+ *
+ * Keep policy in the host (which header means what, what a turn may touch) and
+ * transport here (SSE, keep-alives, cancellation when a client walks away).
+ */
+interface TurnHost {
+    /** Whatever the transport says about who is asking; opaque to kaibo. */
+    fun identify(exchange: HttpExchange): Any? = null
+
+    /** The conversation this turn runs on. Tasks typically return a shared,
+     * persistent history; stateless clients get the request's own messages. */
+    fun history(messages: List<Map<String, Any?>>, turn: Any?): ConversationHistoryProtocol =
+        kaibo.primitives.SimpleConversation.fromOpenaiMessages(messages)
+
+    /** Run one agent turn with [turn] bound (e.g. as thread-local authority). */
+    suspend fun <T> withTurn(turn: Any?, block: suspend () -> T): T = block()
+
+    companion object {
+        /** The stateless behaviour this class had before hosts existed. */
+        val Stateless = object : TurnHost {}
+    }
+}
+
+/**
  * OpenAI-compatible HTTP façade over registered agents: clients point any
  * OpenAI chat library at this server and address agents through `model`.
  *
@@ -23,6 +54,7 @@ class OpenAICompatServer(
     private val port: Int = 8000,
     private val apiKey: String? = null,
     private val streamingTimeoutMs: Long = 30_000,
+    private val host: TurnHost = TurnHost.Stateless,
 ) {
 
     private lateinit var http: HttpServer
@@ -81,10 +113,11 @@ class OpenAICompatServer(
         } ?: ""
         val (agentId, entryPoint) = parseModel(data.str("model") ?: "")
 
-        // history is the context BEFORE this turn; the orchestrator appends the
-        // current user message itself
+        // what the host says about this turn, and the conversation it runs on:
+        // the context BEFORE this turn, since the orchestrator appends the message
+        val turn = host.identify(ex)
         val history = if (messages.lastOrNull()?.get("role") == "user") messages.dropLast(1) else messages
-        val instances = linkedMapOf<String, Any>("__conversation_history__" to SimpleConversation.fromOpenaiMessages(history))
+        val instances = linkedMapOf<String, Any>("__conversation_history__" to host.history(history, turn))
         val bindings = mutableListOf(
             ExchangeConfig(protocol = "ConversationHistoryProtocol", providers = listOf("__conversation_history__"))
         )
@@ -104,9 +137,9 @@ class OpenAICompatServer(
         }
 
         if (chunks != null) {
-            streaming(ex, agent, lastUser, entryPoint, chunkFn, chunks)
+            streaming(ex, agent, turn, lastUser, entryPoint, chunkFn, chunks)
         } else {
-            val response = runBlocking { agent.handleText(lastUser, entryPoint) }
+            val response = runBlocking { host.withTurn(turn) { agent.handleText(lastUser, entryPoint) } }
             json(ex, 200, mapOf(
                 "id" to "chatcmpl-${randomId()}",
                 "object" to "chat.completion",
@@ -124,6 +157,7 @@ class OpenAICompatServer(
     private fun streaming(
         ex: HttpExchange,
         agent: Agent,
+        turn: Any?,
         text: String,
         entryPoint: String,
         chunkFn: (Map<String, Any?>, String?) -> String,
@@ -136,7 +170,7 @@ class OpenAICompatServer(
                 out.write(chunkFn(mapOf("content" to ""), null).toByteArray()) // flush headers
                 val job = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                     try {
-                        agent.handleText(text, entryPoint)
+                        host.withTurn(turn) { agent.handleText(text, entryPoint) }
                     } catch (e: Exception) {
                         System.err.println("Agent task failed: ${e.stackTraceToString()}")
                     } finally {

@@ -13,6 +13,21 @@ class EchoEntry(
     }
 }
 
+/** Entry that keeps its own conversation — how a host's journal gets written. */
+class JournalEntry(
+    val llm: LLMProtocol,
+    val response: ResponseProtocol,
+    val history: ConversationHistoryProtocol,
+    val config: Map<String, Any?> = emptyMap(),
+) : TextMessageHandlerProtocol {
+    override suspend fun handleText(text: String) {
+        history.addMessage(LLMMessage.user(text))
+        val reply = "echo:" + llm.generate(history.getHistory() + LLMMessage.user(text)).content
+        history.addMessage(LLMMessage.assistant(reply))
+        response.respondText(reply)
+    }
+}
+
 /** Entry that consumes the LLM stream — exercises Flow/YIELD events. */
 class StreamEchoEntry(
     val llm: LLMProtocol,
@@ -79,6 +94,27 @@ class SlowTools {
         Thread.sleep(ms.toLong())
         return "woke after $ms"
     }
+}
+
+/** A suspend tool: it observes cancellation, unlike a blocked thread. */
+class SuspendingTools {
+    var cancelled = false
+    var sawSuspension = false
+
+    @KaiboTool(name = "await_or_give_up", description = "Suspends; reports whether it was cancelled")
+    suspend fun awaitOrGiveUp(@KaiboParam("milliseconds to suspend") ms: Int): String {
+        return try {
+            kotlinx.coroutines.delay(ms.toLong())
+            sawSuspension = true
+            "slept $ms"
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            cancelled = true
+            throw e
+        }
+    }
+
+    @KaiboTool(name = "boom", description = "A suspend tool that fails")
+    suspend fun boom(): String = throw IllegalStateException("tool blew up")
 }
 
 abstract class GreeterBase {

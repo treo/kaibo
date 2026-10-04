@@ -178,4 +178,29 @@ class OrchestratorTest {
         assertTrue(result.success)
         assertEquals("a cat", result.result)
     }
+
+    @Test fun `a suspend tool runs, returns, and reports its own failure`() {
+        val provider = FunctionToolProvider(mapOf("tools" to listOf(SuspendingTools())))
+        val ok = runBlocking { provider.executeTool("await_or_give_up", mapOf("ms" to 20)) }
+        assertTrue(ok.success, ok.error ?: "expected success")
+        assertEquals("slept 20", ok.result)
+
+        val failed = runBlocking { provider.executeTool("boom", emptyMap()) }
+        assertFalse(failed.success)
+        assertTrue((failed.error ?: "").contains("blew up"), failed.error ?: "")
+    }
+
+    @Test fun `a timeboxed suspend tool is cancelled, a blocked one is only abandoned`() {
+        val tools = SuspendingTools()
+        val provider = FunctionToolProvider(mapOf("tools" to listOf(tools), "call_timeout_ms" to 100))
+
+        val result = runBlocking { provider.executeTool("await_or_give_up", mapOf("ms" to 2000)) }
+        assertFalse(result.success)
+        assertTrue(result.error!!.contains("timed out"), result.error!!)
+
+        // the distinguishing behaviour: the tool itself observed the cancellation
+        Thread.sleep(150)
+        assertTrue(tools.cancelled, "a suspend tool should be cancelled, not left running unseen")
+        assertFalse(tools.sawSuspension)
+    }
 }

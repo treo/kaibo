@@ -2,6 +2,7 @@ package kaibo
 
 import kaibo.primitives.*
 import kaibo.server.OpenAICompatServer
+import kaibo.server.TurnHost
 import kotlin.test.*
 import java.net.URI
 import java.net.http.HttpClient
