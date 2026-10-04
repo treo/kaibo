@@ -1,0 +1,20 @@
+# Reasoning-heavy variant of the chat agent: explicit ReAct cycles.
+id: react
+description: ReAct orchestrator over an OpenAI-compatible model
+modules:
+  - module: xaibo.primitives.SimpleConversation
+    id: history
+  - module: xaibo.primitives.OpenAILLM
+    id: llm
+    config:
+      model: gpt-4.1-nano
+  - module: xaibo.primitives.FunctionToolProvider
+    id: tools
+    config:
+      tool_classes:
+        - xaibo.examples.DemoTools
+  - module: xaibo.primitives.ReActOrchestrator
+    id: orchestrator
+    config:
+      max_iterations: 8
+      show_reasoning: false

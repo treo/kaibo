@@ -1,0 +1,5 @@
+# Generated / local
+build/
+.gradle/
+.kotlin/
+*.log

@@ -1,0 +1,26 @@
+# Real-LLM agent: any OpenAI-compatible gateway. Reads OPENAI_API_KEY from env.
+# e.g. Alibaba DashScope token-plan endpoint with qwen3.8-flash:
+#   gradle run --args="--agents agents --port 8000" (with OPENAI_API_KEY set)
+id: real-llm
+description: Tool-using agent on a real LLM
+modules:
+  - module: xaibo.primitives.SimpleConversation
+    id: history
+  - module: xaibo.primitives.OpenAILLM
+    id: llm
+    config:
+      base_url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+      model: qwen3.8-flash
+  - module: xaibo.primitives.FunctionToolProvider
+    id: tools
+    config:
+      tool_classes:
+        - xaibo.examples.DemoTools
+  - module: xaibo.primitives.SimpleToolOrchestrator
+    id: orchestrator
+    config:
+      max_thoughts: 6
+      system_prompt: |
+        You are a helpful assistant. You have access to tools (multiply,
+        reverse, current_time). Whenever a request can be answered exactly by
+        calling a tool, call the tool instead of computing the answer yourself.

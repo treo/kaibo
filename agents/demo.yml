@@ -1,0 +1,25 @@
+# Key-free demo: a scripted LLM answers through a tool round trip.
+id: demo
+description: Deterministic demo agent (MockLLM), no API keys needed
+modules:
+  - module: xaibo.primitives.SimpleConversation
+    id: history
+  - module: xaibo.primitives.MockLLM
+    id: llm
+    config:
+      responses:
+        - content: ""
+          tool_calls:
+            - id: call_1
+              name: multiply
+              arguments:
+                a: 6
+                b: 7
+        - content: "6 times 7 is 42."
+  - module: xaibo.primitives.FunctionToolProvider
+    id: tools
+    config:
+      tool_classes:
+        - xaibo.examples.DemoTools
+  - module: xaibo.primitives.SimpleToolOrchestrator
+    id: orchestrator

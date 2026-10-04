@@ -1,0 +1,31 @@
+# Chat agent served over the OpenAI-compatible endpoint.
+# Needs OPENAI_API_KEY (or point base_url at any OpenAI-compatible gateway).
+id: chat
+description: A tool-using chat assistant
+modules:
+  - module: xaibo.primitives.SimpleConversation
+    id: history
+    config:
+      max_history: 40
+  - module: xaibo.primitives.OpenAILLM
+    id: llm
+    config:
+      model: gpt-4.1-nano
+  - module: xaibo.primitives.FunctionToolProvider
+    id: kotlin-tools
+    config:
+      tool_classes:
+        - xaibo.examples.DemoTools
+  - module: xaibo.primitives.ToolCollector
+    id: tools
+  - module: xaibo.primitives.SimpleToolOrchestrator
+    id: orchestrator
+    config:
+      max_thoughts: 10
+      system_prompt: |
+        You are a helpful assistant with access to a variety of tools.
+exchange:
+  # the orchestrator must pick one of the several ToolProviderProtocol providers
+  - module: orchestrator
+    protocol: ToolProviderProtocol
+    provider: tools
