@@ -224,13 +224,16 @@ class LLMCombinator(
     }
 
     override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?) =
-        kotlinx.coroutines.flow.flow {
+        kotlinx.coroutines.flow.flow<StreamFrame> {
             val results = mutableListOf<LLMResponse>()
             var current = messages
             prompts.forEachIndexed { i, prompt ->
                 current = adaptPrompt(current, prompt, results)
                 val chunks = StringBuilder()
-                llms[i].generateStream(current, options).collect { emit(it).also { chunks.append(it) } }
+                llms[i].generateStream(current, options).collect { frame ->
+                    (frame as? StreamFrame.Text)?.let { chunks.append(it.text) }
+                    emit(frame) // frames travel outward through this proxy too
+                }
                 results += LLMResponse(chunks.toString())
             }
         }

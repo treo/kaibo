@@ -11,7 +11,7 @@ modules that demonstrate it; SDK-bound periphery left out (see Scope).
 ## Quick start
 
 ```bash
-gradle test                                  # 38 behavioural tests, no API keys needed
+gradle test                                  # 48 tests: 45 offline, 3 live ones self-skip without a key
 gradle run --args="--agents agents --port 8000"
 ```
 
@@ -145,7 +145,7 @@ src/main/kotlin/xaibo/
   server/OpenAICompatServer.kt  # HTTP façade + main()
   examples/DemoTools.kt
 agents/                         # ready-to-serve agent configs
-src/test/kotlin/xaibo/          # 38 tests documenting the framework's contracts
+src/test/kotlin/xaibo/          # 48 tests documenting the framework's contracts
 ```
 
 ## Notes for maintainers
@@ -155,3 +155,33 @@ src/test/kotlin/xaibo/          # 38 tests documenting the framework's contracts
   assert on responses, events, and tool round-trips — never on internals.
 - Kotlin 2.2 / JVM 21 toolchain, deps: coroutines, kotlinx-serialization,
   kaml, kotlin-reflect. No framework lock-in at runtime.
+
+## Harness support (streaming frontends)
+
+The OpenAI-compatible server is one frontend; a harness (TUI, websocket, IDE
+protocol) plugs in at the framework's native seams:
+
+- **`generateStream` yields `StreamFrame`s** — `Text`, `Thinking`, `ToolCall`,
+  `Usage`, `Done`. Every frame crosses the module proxy as a `YIELD` event,
+  so a frontend renders the entire turn — tokens, reasoning, tool calls and
+  results, usage — from the event bus alone. Thinking is *not* content: it
+  never mixes into the answer and lands, assembled, in
+  `LLMResponse.vendorSpecific["thinking"]` (`StreamAssembler`).
+- **`StreamingToolOrchestrator`** (`stream: true`) runs every round as a
+  stream, journals the full transcript (`persist: true` — history is the
+  source of truth), asks a `CompactionProtocol` history to compact before
+  each turn, applies the reasoning level to all rounds, and delivers the
+  settled answer in `stream_chunk_chars` slices so response-consuming
+  adapters (like the SSE server) see deltas too.
+- **Steering**: `agent.steer("text")` queues a user message into the running
+  turn; it lands at the earliest point the conversation grammar allows
+  (after a complete tool batch). Never lost, never half-taken. Entries that
+  cannot steer make it return `false`.
+- **Response lane injection**: replace `__response__` via `ConfigOverrides`
+  with any sink (channel/websocket pusher) — live per-turn delivery without
+  touching agents, exactly how the SSE endpoint streams.
+
+One hot-path rule for event listeners (the Python harness learned it the hard
+way): YIELDs fire once per proxy layer of a delegation chain — e.g. a
+`LLMCombinator` wrapping two LLMs frames twice. Dedupe by
+`Event.callerId`/`moduleId`.

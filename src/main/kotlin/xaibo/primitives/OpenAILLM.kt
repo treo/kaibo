@@ -79,29 +79,78 @@ class OpenAILLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
         }
 
         return LLMResponse(
-            content, toolCalls, usage,
-            buildMap {
+            content = content,
+            toolCalls = toolCalls,
+            usage = usage,
+            vendorSpecific = buildMap {
                 put("id", root.str("id"))
                 put("model", root.str("model"))
                 put("finish_reason", finishReason)
+                // thinking models answer with reasoning on its own field; it is
+                // not content but the settled response should still carry it
+                message?.str("reasoning_content")?.let { put("thinking", it) }
                 if (truncatedToolCalls.isNotEmpty()) put("truncated_tool_calls", truncatedToolCalls)
             },
         )
     }
 
-    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<String> = flow {
+    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<StreamFrame> = flow {
         val body = buildBody(messages, options, stream = true)
         val resp = client.send(httpRequest(body, "text/event-stream"), HttpResponse.BodyHandlers.ofLines())
+        val toolAcc = sortedMapOf<Int, MutableMap<String, StringBuilder>>() // index -> id/name/args parts
+        var usage: LLMUsage? = null
+        var finishReason: String? = null
+        var firstId: String? = null
+        var firstModel: String? = null
         resp.body().use { lines ->
             for (line in lines) {
                 if (!line.startsWith("data:")) continue
                 val payload = line.substring(5).trim()
                 if (payload.isEmpty() || payload == "[DONE]") continue
-                val delta = json.parseToJsonElement(payload).asObject()
-                    ?.arr("choices")?.firstOrNull()?.asObject()?.obj("delta")
-                delta?.str("content")?.let { emit(it) }
+                val chunk = json.parseToJsonElement(payload).asObject() ?: continue
+                firstId = firstId ?: chunk.str("id")
+                firstModel = firstModel ?: chunk.str("model")
+                chunk.obj("usage")?.let { u ->
+                    usage = LLMUsage(
+                        u.getIntOrZero("prompt_tokens"), u.getIntOrZero("completion_tokens"),
+                        u.getIntOrZero("total_tokens"),
+                        u.obj("prompt_tokens_details").getIntOrZero("cached_tokens"),
+                    )
+                }
+                val choice = chunk.arr("choices")?.firstOrNull()?.asObject() ?: continue
+                finishReason = choice.str("finish_reason") ?: finishReason
+                val delta = choice.obj("delta") ?: continue
+                delta.str("content")?.let { emit(StreamFrame.Text(it)) }
+                // thinking models (qwen3, deepseek-r1, ...) stream reasoning on
+                // a separate field; content stays empty until they start talking
+                delta.str("reasoning_content")?.let { emit(StreamFrame.Thinking(it)) }
+                delta.arr("tool_calls")?.forEachIndexed { _, tc ->
+                    val t = tc.asObject() ?: return@forEachIndexed
+                    val idx = (t["index"] as? JsonPrimitive)?.int ?: 0
+                    val slot = toolAcc.getOrPut(idx) {
+                        mutableMapOf("id" to StringBuilder(), "name" to StringBuilder(), "args" to StringBuilder())
+                    }
+                    t.str("id")?.let { slot["id"]!!.append(it) }
+                    val fn = t.obj("function")
+                    fn?.str("name")?.let { slot["name"]!!.append(it) }
+                    fn?.str("arguments")?.let { slot["args"]!!.append(it) }
+                }
             }
         }
+        usage?.let { emit(StreamFrame.Usage(it)) }
+        if (toolAcc.isNotEmpty()) {
+            if (finishReason == "length") {
+                emit(StreamFrame.Text(
+                    "[Error: streamed response was truncated by the token limit; tool calls discarded. " +
+                        "Continue with smaller output.]"))
+            } else toolAcc.forEach { (idx, slot) ->
+                parseToolArguments(slot["args"]!!.toString())?.let { args ->
+                    val id = slot["id"]!!.toString().ifEmpty { "call_$idx" }
+                    emit(StreamFrame.ToolCall(LLMFunctionCall(id, slot["name"]!!.toString(), args)))
+                } ?: System.err.println("Skipping streamed tool call '${slot["name"]}' — malformed arguments")
+            }
+        }
+        emit(StreamFrame.Done(mapOf("id" to firstId, "model" to firstModel, "finish_reason" to finishReason)))
     }.flowOn(Dispatchers.IO)
 
     // -- wire format -------------------------------------------------------------
@@ -130,7 +179,12 @@ class OpenAILLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
         )
         kwargs.putAll(defaultKwargs)
         kwargs.putAll(o.vendorSpecific)
-        if (stream) kwargs["stream"] = true
+        if (stream) {
+            kwargs["stream"] = true
+            // gateways that support it report usage on a final chunk; asking is
+            // what makes the Usage frame real rather than absent
+            kwargs["stream_options"] = mapOf("include_usage" to true)
+        }
         return kwargs.filterValues { it != null }.toJsonElement().toString()
     }
 

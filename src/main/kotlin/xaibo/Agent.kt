@@ -11,6 +11,17 @@ class Agent(val id: String, val exchange: Exchange) {
 
     fun getEntryPointIds(): List<String> = exchange.entryPointIds()
 
+    /**
+     * Queue a steering message for a running turn if the entry module supports
+     * it ([SteeringProtocol]). Safe to call while [handleText] is awaited from
+     * another coroutine; returns false when the entry cannot take steering.
+     */
+    fun steer(text: String, entryPoint: String = "__entry__"): Boolean {
+        val entry = exchange.getModule(entryPoint, "agent:$id") as? SteeringProtocol ?: return false
+        entry.steer(text)
+        return true
+    }
+
     suspend fun handleText(text: String, entryPoint: String = "__entry__"): Response {
         val entry = exchange.getModule(entryPoint, "agent:$id") as? TextMessageHandlerProtocol
             ?: throw NoSuchElementException("Entry module does not implement TextMessageHandlerProtocol")

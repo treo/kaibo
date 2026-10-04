@@ -36,10 +36,17 @@ class RealLLMTest {
 
     @Test fun `a real model streams`() {
         requireKey()
-        val chunks = runBlocking {
+        val frames = runBlocking {
             llm().generateStream(listOf(LLMMessage.user("Count from 1 to 5 separated by spaces."))).toList()
         }
-        assertTrue(chunks.joinToString("").contains("3"), "no meaningful chunks")
+        val text = frames.filterIsInstance<StreamFrame.Text>().joinToString("") { it.text }
+        assertTrue("3" in text, "no meaningful text chunks: $frames")
+        assertTrue(frames.any { it is StreamFrame.Done }, "stream must terminate with a Done frame")
+        // usage requires the gateway to honor stream_options.include_usage; when
+        // it does, the frame must carry real numbers
+        frames.filterIsInstance<StreamFrame.Usage>().firstOrNull()?.let {
+            assertTrue(it.usage.totalTokens > 0, "usage frame with zero tokens")
+        }
     }
 
     @Test fun `a real model uses tools through a fully wired agent`() {

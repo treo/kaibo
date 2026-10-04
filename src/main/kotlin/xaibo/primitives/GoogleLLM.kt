@@ -52,7 +52,7 @@ class GoogleLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
             ?: error("Gemini returned a non-object response: ${resp.body().take(500)}"))
     }
 
-    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<String> = flow {
+    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<StreamFrame> = flow {
         val body = buildBody(messages, options ?: LLMOptions(), stream = true)
         val resp = client.send(httpRequest(":streamGenerateContent?alt=sse", body), HttpResponse.BodyHandlers.ofLines())
         resp.body().use { lines ->
@@ -60,8 +60,13 @@ class GoogleLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
                 if (!line.startsWith("data:")) continue
                 val root = runCatching { json.parseToJsonElement(line.substring(5).trim()).asObject() }.getOrNull()
                 root?.arr("candidates")?.firstOrNull()?.asObject()?.obj("content")?.arr("parts")
-                    ?.mapNotNull { it.asObject()?.str("text") }
-                    ?.forEach { emit(it) }
+                    ?.forEach { part ->
+                        val p = part.asObject() ?: return@forEach
+                        val text = p.str("text") ?: return@forEach
+                        if (p["thought"]?.let { it is JsonPrimitive && it.boolean } == true)
+                            emit(StreamFrame.Thinking(text))
+                        else emit(StreamFrame.Text(text))
+                    }
             }
         }
     }.flowOn(Dispatchers.IO)

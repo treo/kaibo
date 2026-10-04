@@ -105,12 +105,12 @@ class MockLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
     override suspend fun generate(messages: List<LLMMessage>, options: LLMOptions?): LLMResponse =
         responses[cur].also { cur = (cur + 1) % responses.size }
 
-    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<String> = flow {
+    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<StreamFrame> = flow {
         val text = generate(messages, options).content
         var i = 0
         while (i < text.length) {
             if (streamingDelay > 0) delay(streamingDelay.toLong())
-            emit(text.substring(i, minOf(i + chunkSize, text.length)))
+            emit(StreamFrame.Text(text.substring(i, minOf(i + chunkSize, text.length))))
             i += chunkSize
         }
     }

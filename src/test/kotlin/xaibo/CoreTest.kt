@@ -131,7 +131,7 @@ class CoreTest {
                 override suspend fun generate(messages: List<LLMMessage>, options: LLMOptions?) =
                     error("nope")
                 override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?) =
-                    kotlinx.coroutines.flow.flow<String> { error("nope") }
+                    kotlinx.coroutines.flow.flow<StreamFrame> { error("nope") }
             }),
         )
         assertFailsWith<IllegalStateException> {
@@ -166,7 +166,7 @@ class CoreTest {
         assertEquals("abcdefghi", response.text)
         val yields = events.filter { it.eventType == EventType.YIELD }
         assertEquals(3, yields.size) // chunk size default 3
-        assertEquals("abc", yields.first().result)
+        assertEquals(StreamFrame.Text("abc"), yields.first().result)
         assertEquals(3L, (events.last().result as Map<*, *>)["chunks"])
     }
 

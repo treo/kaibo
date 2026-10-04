@@ -21,7 +21,9 @@ class StreamEchoEntry(
 ) : TextMessageHandlerProtocol {
     override suspend fun handleText(text: String) {
         val sb = StringBuilder()
-        llm.generateStream(listOf(LLMMessage.user(text))).collect { sb.append(it) }
+        llm.generateStream(listOf(LLMMessage.user(text))).collect { frame ->
+            (frame as? StreamFrame.Text)?.let { sb.append(it.text) }
+        }
         response.respondText(sb.toString())
     }
 }
@@ -43,19 +45,22 @@ class FakeTools(val config: Map<String, Any?> = emptyMap()) : ToolProviderProtoc
     }
 }
 
-/** LLM that records the options of every call, cycling fixed responses. */
+/** LLM that records the options and conversations of every call, cycling fixed responses. */
 class ScriptedLLM(
     val responses: List<LLMResponse>,
     val seen: MutableList<LLMOptions> = mutableListOf(),
+    val seenConversations: MutableList<List<LLMMessage>> = mutableListOf(),
+    override val streams: Boolean = true,
 ) : LLMProtocol {
     private var cur = 0
     override suspend fun generate(messages: List<LLMMessage>, options: LLMOptions?): LLMResponse {
         seen += options ?: LLMOptions()
+        seenConversations += messages.toList()
         return responses[cur++ % responses.size]
     }
 
     override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?) =
-        kotlinx.coroutines.flow.flow { emit(generate(messages, options).content) }
+        kotlinx.coroutines.flow.flow<StreamFrame> { emit(StreamFrame.Text(generate(messages, options).content)) }
 }
 
 enum class Precision { LOW, HIGH }
@@ -85,4 +90,47 @@ abstract class GreeterBase {
 
 class LoudGreeter : GreeterBase() {
     override fun greet(name: String) = "HI $name!!"
+}
+
+/** Streams prepared [StreamFrame] rounds; records every conversation it is shown. */
+class FrameLLM(private val rounds: List<List<StreamFrame>>) : LLMProtocol {
+    private var call = 0
+    val seenConversations = mutableListOf<List<LLMMessage>>()
+    private fun next() = rounds[minOf(call, rounds.lastIndex)].also { call++ }
+
+    override suspend fun generate(messages: List<LLMMessage>, options: LLMOptions?): LLMResponse {
+        seenConversations += messages
+        return StreamAssembler().apply { next().forEach { feed(it) } }.response()
+    }
+
+    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?) =
+        kotlinx.coroutines.flow.flow<StreamFrame> {
+            seenConversations += messages
+            next().forEach { emit(it) }
+        }
+}
+
+class RecordingResponse(
+    val texts: MutableList<String> = mutableListOf(),
+    val events: MutableList<Any> = mutableListOf(),
+) : ResponseProtocol {
+    override suspend fun getResponse() = Response()
+    override suspend fun respondText(response: String) { texts += response }
+    override suspend fun respondEvent(event: Any) { events += event }
+    override suspend fun respondImage(bytes: ByteArray) {}
+    override suspend fun respondAudio(bytes: ByteArray) {}
+    override suspend fun respondFile(bytes: ByteArray) {}
+    override suspend fun respond(response: Response) { response.text?.let { texts += it } }
+}
+
+open class RecordingHistory : ConversationHistoryProtocol {
+    val added = mutableListOf<LLMMessage>()
+    override suspend fun getHistory() = added.toList()
+    override suspend fun addMessage(message: LLMMessage) { added += message }
+    override suspend fun clearHistory() { added.clear() }
+}
+
+class CompactingHistory : RecordingHistory(), CompactionProtocol {
+    var compactions = 0
+    override suspend fun compactIfNeeded(llm: LLMProtocol) { compactions++ }
 }

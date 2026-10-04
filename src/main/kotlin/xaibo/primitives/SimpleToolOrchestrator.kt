@@ -52,39 +52,43 @@ class SimpleToolOrchestrator(
             val toolCalls = llmResponse.toolCalls.orEmpty()
             if (thoughts >= maxThoughts || toolCalls.isEmpty()) break
 
-            val results = toolCalls.map { call ->
-                response.respondEvent(ToolCallEvent(call.id, call.name, call.arguments))
-                val result = try {
-                    toolProvider.executeTool(call.name, call.arguments)
-                } catch (e: Exception) {
-                    ToolResult(success = false, error = e.message)
-                }
-                if (!result.success) stressLevel += 0.1
-                response.respondEvent(
-                    ToolResultEvent(call.id, call.name, result.success,
-                        result = result.result?.jsonSafe().takeIf { result.success },
-                        error = result.error.takeIf { !result.success })
-                )
-                mapOf("id" to call.id, "name" to call.name) +
-                    if (result.success) mapOf("result" to result.result.jsonString())
-                    else mapOf("error" to "Error: ${result.error}")
-            }
-
-            conversation.add(
-                LLMMessage(
-                    role = LLMRole.FUNCTION,
-                    toolResults = results.map {
-                        LLMFunctionResult(
-                            id = it["id"] as String,
-                            name = it["name"] as String,
-                            content = (it["result"] ?: it["error"]) as String,
-                        )
-                    },
-                )
-            )
+            val (resultMessages, stress) = executeToolBatch(toolProvider, response, toolCalls)
+            conversation.addAll(resultMessages)
+            stressLevel += stress
         }
 
         // The final assistant message is the answer
         response.respondText(conversation.last().content.firstOrNull()?.text ?: "")
     }
+}
+
+/**
+ * Runs a batch of tool calls, emitting call/result events, and returns the
+ * result messages plus the accumulated stress (one +0.1 per failure). Each
+ * result becomes its own FUNCTION message — the canonical OpenAI shape, and
+ * what lets a persisting loop journal them one by one.
+ */
+internal suspend fun executeToolBatch(
+    toolProvider: ToolProviderProtocol,
+    response: ResponseProtocol,
+    toolCalls: List<LLMFunctionCall>,
+): Pair<List<LLMMessage>, Double> {
+    var stress = 0.0
+    val messages = toolCalls.map { call ->
+        response.respondEvent(ToolCallEvent(call.id, call.name, call.arguments))
+        val result = try {
+            toolProvider.executeTool(call.name, call.arguments)
+        } catch (e: Exception) {
+            ToolResult(success = false, error = e.message)
+        }
+        if (!result.success) stress += 0.1
+        response.respondEvent(
+            ToolResultEvent(call.id, call.name, result.success,
+                result = result.result?.jsonSafe().takeIf { result.success },
+                error = result.error.takeIf { !result.success }),
+        )
+        val content = if (result.success) result.result.jsonString() else "Error: ${result.error}"
+        LLMMessage.functionResult(call.id, call.name, content)
+    }
+    return messages to stress
 }

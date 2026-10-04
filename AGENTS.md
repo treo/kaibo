@@ -58,6 +58,7 @@ periphery behind SDKs it doesn't need (see *Out of scope*).
 src/main/kotlin/xaibo/
   Models.kt          plain data classes; EventType/Event; Response events
   Protocols.kt       the interfaces modules are wired by (LLM, Response, …)
+  Stream.kt          StreamFrame vocabulary + StreamAssembler
   Config.kt          AgentConfig + populateImplicits (auto-wiring) + YAML (kaml)
   AgentDsl.kt        agentConfig { } DSL — produces the SAME config objects
   Exchange.kt        instantiation, injection, EventProxy (JDK proxy)
@@ -88,6 +89,13 @@ Invariants worth preserving:
 
 - **Flows:** never `emit` from inside `withContext(...)` in a `flow {}`
   builder — Flow invariant violation. Use `.flowOn(Dispatchers.IO)`.
+- **Stream frames & YIELD fan-out:** `generateStream` yields
+  `StreamFrame.{Text,Thinking,ToolCall,Usage,Done}`; thinking is never
+  content (it assembles into `vendorSpecific["thinking"]`). Frames fire a
+  YIELD *per proxy layer* of a delegation chain (combinator-wrapped LLMs
+  double-frame) — listeners dedupe by `callerId`/`moduleId`. Wrappers that
+  can't stream must publish `streams = false`, and orchestrators must fall
+  back to `generate`.
 - **Init order:** a property initialiser must not call a method that writes
   to that same property (the `load()`/`entries` NPE). Use `init { load() }`.
 - **KClass scanning:** `KClass.functions` lists only *declared* members —

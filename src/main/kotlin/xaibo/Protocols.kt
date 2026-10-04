@@ -4,10 +4,15 @@ import kotlinx.coroutines.flow.Flow
 
 /** Protocol for interacting with LLM models */
 interface LLMProtocol {
+    /** Wrappers that cannot stream should publish `streams = false` so
+     * callers fall back to [generate] instead of attempting the flow. */
+    val streams: Boolean get() = true
+
     suspend fun generate(messages: List<LLMMessage>, options: LLMOptions? = null): LLMResponse
 
-    /** Generate a streaming response; chunks arrive as text pieces */
-    fun generateStream(messages: List<LLMMessage>, options: LLMOptions? = null): Flow<String>
+    /** Generate a streaming response as [StreamFrame]s (each frame is also
+     * observable on the event bus as a YIELD through the module proxy). */
+    fun generateStream(messages: List<LLMMessage>, options: LLMOptions? = null): Flow<StreamFrame>
 }
 
 /** Protocol for accessing conversation history, oldest message first */
@@ -43,6 +48,25 @@ interface ResponseProtocol {
 
 interface TextMessageHandlerProtocol {
     suspend fun handleText(text: String)
+}
+
+/**
+ * A message handler that accepts steering: user messages queued WHILE a turn
+ * is running. The running loop drains them at the earliest point the
+ * conversation grammar allows (after a tool-call batch is fully answered);
+ * a steered message can never be lost or half-taken.
+ */
+interface SteeringProtocol {
+    fun steer(text: String)
+}
+
+/**
+ * A conversation history that can compact itself (typically by asking an LLM
+ * to summarize older turns) before a turn begins. Implement it on a history
+ * module to get compaction for free from orchestrators that check for it.
+ */
+interface CompactionProtocol {
+    suspend fun compactIfNeeded(llm: LLMProtocol)
 }
 
 interface ImageMessageHandlerProtocol {

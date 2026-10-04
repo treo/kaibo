@@ -73,11 +73,13 @@ class AnthropicLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
         val root = json.parseToJsonElement(resp.body()).jsonObject
 
         val text = StringBuilder()
+        val thinking = StringBuilder()
         var toolCall: LLMFunctionCall? = null
         for (item in root["content"].asArrayOrEmpty()) {
             val o = item.asObject() ?: continue
             when (o.str("type")) {
                 "text" -> o.str("text")?.let(text::append)
+                "thinking" -> o.str("thinking")?.let(thinking::append)
                 "tool_use" -> toolCall = LLMFunctionCall(o.str("id") ?: "", o.str("name") ?: "",
                     (o["input"].asObject())?.toKotlin()?.let { it as? Map<String, Any?> } ?: emptyMap())
             }
@@ -94,11 +96,15 @@ class AnthropicLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
             content = text.toString(),
             toolCalls = listOfNotNull(toolCall),
             usage = usage,
-            vendorSpecific = mapOf("id" to root.str("id"), "model" to root.str("model")),
+            vendorSpecific = buildMap {
+                put("id", root.str("id"))
+                put("model", root.str("model"))
+                if (thinking.isNotEmpty()) put("thinking", thinking.toString())
+            },
         )
     }
 
-    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<String> = flow {
+    override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<StreamFrame> = flow {
         val opts = options ?: LLMOptions()
         val (prepared, system) = prepareMessages(messages)
         val body = requestKwargs(prepared, system, opts, stream = true)
@@ -110,7 +116,14 @@ class AnthropicLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
                 val evt = runCatching { json.parseToJsonElement(line.substring(5).trim()).jsonObject }
                     .getOrNull() ?: continue
                 if (evt.str("type") == "content_block_delta") {
-                    (evt["delta"].asObject())?.str("text")?.let { emit(it) }
+                    // Anthropic separates answer text from reasoning on the wire;
+                    // we keep them in separate frames
+                    val delta = evt["delta"].asObject()
+                    when (delta?.str("type")) {
+                        "text_delta" -> delta.str("text")?.let { emit(StreamFrame.Text(it)) }
+                        "thinking_delta" -> delta.str("thinking")?.let { emit(StreamFrame.Thinking(it)) }
+                        else -> {}
+                    }
                 }
             }
         }
