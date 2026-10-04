@@ -1,6 +1,6 @@
 # Kaibo
 
-A Kotlin port of the Python [xaibo](../xaibo) agent framework: protocol-based
+A Kotlin port of the Python [xaibo](https://github.com/xpressai/xaibo) agent framework: protocol-based
 dependency injection, transparent module proxies with an event stream, YAML-
 and DSL-defined agents, tool orchestration, vector memory, and an
 OpenAI-compatible server.

@@ -6,7 +6,8 @@ reflection, flows, or the server.
 
 ## What this is
 
-A Kotlin port of the Python `xaibo` agent framework (`../xaibo`). It kept
+A Kotlin port of the Python [`xaibo`](https://github.com/xpressai/xaibo) agent
+framework. It kept
 the framework's core ideas — protocol-based dependency injection, transparent
 module proxies with an event stream, agents defined declaratively (YAML files
 **and** a Kotlin DSL over one shared config model) — and dropped the Python
