@@ -91,11 +91,12 @@ Invariants worth preserving:
   builder — Flow invariant violation. Use `.flowOn(Dispatchers.IO)`.
 - **Stream frames & YIELD fan-out:** `generateStream` yields
   `StreamFrame.{Text,Thinking,ToolCall,Usage,Done}`; thinking is never
-  content (it assembles into `vendorSpecific["thinking"]`). Frames fire a
-  YIELD *per proxy layer* of a delegation chain (combinator-wrapped LLMs
-  double-frame) — listeners dedupe by `callerId`/`moduleId`. Wrappers that
-  can't stream must publish `streams = false`, and orchestrators must fall
-  back to `generate`.
+  content — it surfaces as the first-class `LLMResponse.thinking` field and
+  a `ThinkingEvent` on the response lane, not a `vendorSpecific` key. Frames
+  fire a YIELD *per proxy layer* of a delegation chain (combinator-wrapped
+  LLMs double-frame) — listeners dedupe by `callerId`/`moduleId`. Wrappers
+  that can't stream must publish `streams = false`, and orchestrators must
+  fall back to `generate`.
 - **Init order:** a property initialiser must not call a method that writes
   to that same property (the `load()`/`entries` NPE). Use `init { load() }`.
 - **KClass scanning:** `KClass.functions` lists only *declared* members —

@@ -96,11 +96,8 @@ class AnthropicLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
             content = text.toString(),
             toolCalls = listOfNotNull(toolCall),
             usage = usage,
-            vendorSpecific = buildMap {
-                put("id", root.str("id"))
-                put("model", root.str("model"))
-                if (thinking.isNotEmpty()) put("thinking", thinking.toString())
-            },
+            thinking = thinking.toString().ifEmpty { null },
+            vendorSpecific = mapOf("id" to root.str("id"), "model" to root.str("model")),
         )
     }
 

@@ -11,7 +11,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
  *   `llm.generateStream`, so each `StreamFrame` (text, *thinking*, tool-call,
  *   usage) crosses the module proxy as a YIELD event — a frontend can render
  *   the whole turn live from the event bus alone. The settled response is
- *   rebuilt by [StreamAssembler]; thinking stays separate from content.
+ *   rebuilt by [StreamAssembler]; thinking stays separate from content and is
+ *   reported per round on the response lane as a [ThinkingEvent].
  * - **persistence** (`persist: true`): user, assistant and tool-result
  *   messages are written to the injected history, making the conversation log
  *   the transcript — a history that stores to disk is then the source of truth.
@@ -116,6 +117,7 @@ class StreamingToolOrchestrator(
             )
             val llmResponse = generate(conversation, options)
             llmResponse.usage?.let { response.respondEvent(UsageEvent(it)) }
+            llmResponse.thinking?.let { response.respondEvent(ThinkingEvent(it)) }
 
             val assistant = LLMMessage(
                 role = if (llmResponse.toolCalls != null) LLMRole.FUNCTION else LLMRole.ASSISTANT,

@@ -6,8 +6,8 @@ package xaibo
  * event, so frontends render live from events alone).
  *
  * Thinking is NOT content: it is what the model reasoned, not what it said;
- * it never mixes into [Text] and lands in the settled response's
- * `vendorSpecific["thinking"]` (see [StreamAssembler]).
+ * it never mixes into [Text] and surfaces as the settled response's first-class
+ * [LLMResponse.thinking] field (see [StreamAssembler]).
  */
 sealed class StreamFrame {
     data class Text(val text: String) : StreamFrame()
@@ -43,6 +43,7 @@ class StreamAssembler {
         content = content.toString(),
         toolCalls = toolCalls.ifEmpty { null },
         usage = usage,
-        vendorSpecific = if (thinking.isNotEmpty()) vendor + ("thinking" to thinking.toString()) else vendor,
+        thinking = thinking.toString().ifEmpty { null },
+        vendorSpecific = vendor,
     )
 }

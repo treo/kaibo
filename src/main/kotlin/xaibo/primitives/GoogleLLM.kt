@@ -181,7 +181,13 @@ class GoogleLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
         val candidate = root.arr("candidates")?.firstOrNull()?.asObject()
             ?: error("Gemini returned no candidates: ${root.toString().take(500)}")
         val parts = candidate.obj("content").arr("parts").asArrayOrEmpty()
-        val text = parts.mapNotNull { it.asObject()?.str("text") }.joinToString("")
+        val text = StringBuilder()
+        val thought = StringBuilder()
+        for (p in parts.mapNotNull { it.asObject() }) {
+            val t = p.str("text") ?: continue
+            // Gemini marks reasoning parts with `thought: true`; keep them apart
+            if ((p["thought"] as? JsonPrimitive)?.boolean == true) thought.append(t) else text.append(t)
+        }
         val toolCalls = parts.mapNotNull { p ->
             p.asObject()?.obj("functionCall")?.let { fc ->
                 LLMFunctionCall(
@@ -196,7 +202,12 @@ class GoogleLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
             val completion = u.getIntOrZero("candidatesTokenCount")
             LLMUsage(prompt, completion, u.getIntOrZero("totalTokenCount"), u.getIntOrZero("cachedContentTokenCount"))
         }
-        return LLMResponse(text, toolCalls, usage,
-            mapOf("finishReason" to candidate.str("finishReason"), "model" to model))
+        return LLMResponse(
+            content = text.toString(),
+            toolCalls = toolCalls,
+            usage = usage,
+            thinking = thought.toString().ifEmpty { null },
+            vendorSpecific = mapOf("finishReason" to candidate.str("finishReason"), "model" to model),
+        )
     }
 }

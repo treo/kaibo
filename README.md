@@ -11,7 +11,7 @@ modules that demonstrate it; SDK-bound periphery left out (see Scope).
 ## Quick start
 
 ```bash
-gradle test                                  # 48 tests: 45 offline, 3 live ones self-skip without a key
+gradle test                                  # 48 tests: 45 offline, 4 live ones self-skip without a key
 gradle run --args="--agents agents --port 8000"
 ```
 
@@ -165,8 +165,9 @@ protocol) plugs in at the framework's native seams:
   `Usage`, `Done`. Every frame crosses the module proxy as a `YIELD` event,
   so a frontend renders the entire turn — tokens, reasoning, tool calls and
   results, usage — from the event bus alone. Thinking is *not* content: it
-  never mixes into the answer and lands, assembled, in
-  `LLMResponse.vendorSpecific["thinking"]` (`StreamAssembler`).
+  never mixes into the answer; it surfaces as the first-class
+  `LLMResponse.thinking` field (`StreamAssembler`) and, per round, as a
+  `ThinkingEvent` on the response lane.
 - **`StreamingToolOrchestrator`** (`stream: true`) runs every round as a
   stream, journals the full transcript (`persist: true` — history is the
   source of truth), asks a `CompactionProtocol` history to compact before

@@ -106,7 +106,9 @@ class MockLLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
         responses[cur].also { cur = (cur + 1) % responses.size }
 
     override fun generateStream(messages: List<LLMMessage>, options: LLMOptions?): Flow<StreamFrame> = flow {
-        val text = generate(messages, options).content
+        val response = generate(messages, options)
+        response.thinking?.let { emit(StreamFrame.Thinking(it)) }
+        val text = response.content
         var i = 0
         while (i < text.length) {
             if (streamingDelay > 0) delay(streamingDelay.toLong())

@@ -91,6 +91,9 @@ data class LLMResponse(
     val content: String,
     val toolCalls: List<LLMFunctionCall>? = null,
     val usage: LLMUsage? = null,
+    /** What a reasoning model thought on the way to this answer, when the
+     * provider reports it. Not content: the answer stays the answer. */
+    val thinking: String? = null,
     val vendorSpecific: Map<String, Any?> = emptyMap(),
 ) {
     companion object {
@@ -106,6 +109,7 @@ data class LLMResponse(
                     a.cachedTokens + b.cachedTokens,
                 )
             },
+            thinking = responses.mapNotNull { it.thinking }.joinToString("\n").ifEmpty { null },
             vendorSpecific = responses.fold(emptyMap()) { acc, r -> acc + r.vendorSpecific },
         )
 
@@ -125,7 +129,9 @@ data class LLMResponse(
                     (it["arguments"] as? Map<String, Any?>) ?: emptyMap())
             }
             return LLMResponse(str("content") ?: "", toolCalls, usage,
-                (m["vendor_specific"] as? Map<String, Any?>) ?: emptyMap())
+                thinking = str("thinking"),
+                vendorSpecific = (m["vendor_specific"] as? Map<String, Any?>) ?: emptyMap(),
+            )
         }
     }
 }
@@ -168,6 +174,11 @@ data class UsageEvent(
         operator fun invoke(usage: LLMUsage) =
             UsageEvent(usage.promptTokens, usage.completionTokens, usage.totalTokens, usage.cachedTokens)
     }
+}
+
+/** A reasoning model's thinking, reported separately from the answer */
+data class ThinkingEvent(val text: String) {
+    val type = "thinking"
 }
 
 /**

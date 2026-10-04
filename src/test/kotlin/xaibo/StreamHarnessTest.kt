@@ -51,8 +51,8 @@ class StreamHarnessTest {
         assertEquals("the answer", settled.content)
         assertEquals("add", settled.toolCalls!!.first().name)
         assertEquals(15, settled.usage!!.totalTokens)
-        // thinking is NOT content: it travels separately, never mixed in
-        assertEquals("hm, 2+3", settled.vendorSpecific["thinking"])
+        // thinking is NOT content: it is a field of its own, never mixed in
+        assertEquals("hm, 2+3", settled.thinking)
         assertEquals("tool_calls", settled.vendorSpecific["finish_reason"])
         assertEquals(true, settled.vendorSpecific["streamed"])
     }
@@ -85,8 +85,12 @@ class StreamHarnessTest {
         )
         val response = runBlocking { agent.handleText("go") }
         assertEquals("done counting", response.text)
+        // live: frames on the event bus...
         val yields = events.filter { it.eventType == EventType.YIELD }.map { it.result }
         assertTrue(yields.contains(StreamFrame.Thinking("counting...")), "frames on the bus: $yields")
+        // ...and settled: a first-class ThinkingEvent on the response lane
+        assertTrue(response.events.any { it is ThinkingEvent && it.text == "counting..." },
+            "response events: ${response.events}")
     }
 
     @Test fun `chunked delivery lets response-consuming adapters see deltas`() {

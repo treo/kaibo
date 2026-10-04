@@ -84,4 +84,22 @@ class RealLLMTest {
         )
         assertTrue(events.any { it.eventName.endsWith("generate.result") }, "event proxy observed the real API calls")
     }
+
+    @Test fun `a real thinking model reports reasoning as thinking, separate from the answer`() {
+        requireKey()
+        // qwen3.8-flash with a requested effort level streams reasoning_content;
+        // the settled response must surface it on its own field, never in content
+        val assembler = StreamAssembler()
+        runBlocking {
+            llm().generateStream(
+                listOf(LLMMessage.user("A snail climbs 3m by day, slips 2m by night; a 10m well. What day does it escape?")),
+                LLMOptions(reasoningEffort = ReasoningEffort.LOW),
+            ).collect { assembler.feed(it) }
+        }
+        val settled = assembler.response()
+        assertNotNull(settled.thinking, "no thinking frames streamed (gateway may not expose reasoning for this prompt)")
+        assertTrue(settled.thinking.isNotBlank())
+        assertTrue(settled.content.isNotBlank(), "the answer must still be present alongside the thinking")
+        assertFalse(settled.thinking in settled.content, "thinking leaked into the answer")
+    }
 }

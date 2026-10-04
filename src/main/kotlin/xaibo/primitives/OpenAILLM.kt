@@ -82,13 +82,13 @@ class OpenAILLM(val config: Map<String, Any?> = emptyMap()) : LLMProtocol {
             content = content,
             toolCalls = toolCalls,
             usage = usage,
+            // thinking models answer with reasoning on its own field; it is
+            // not content, but it is not vendor-specific either
+            thinking = message?.str("reasoning_content"),
             vendorSpecific = buildMap {
                 put("id", root.str("id"))
                 put("model", root.str("model"))
                 put("finish_reason", finishReason)
-                // thinking models answer with reasoning on its own field; it is
-                // not content but the settled response should still carry it
-                message?.str("reasoning_content")?.let { put("thinking", it) }
                 if (truncatedToolCalls.isNotEmpty()) put("truncated_tool_calls", truncatedToolCalls)
             },
         )
