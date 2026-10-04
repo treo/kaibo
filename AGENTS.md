@@ -31,7 +31,7 @@ periphery behind SDKs it doesn't need (see *Out of scope*).
 5. **Be honest in names.** `NumpyVectorIndex` was renamed `JsonVectorIndex`
    for a reason: if the name promises a library we don't use, fix the name,
    not the lie. Class docs must state the real limits (e.g. linear-scan
-   search, non-suspend tool functions only).
+   search, tool functions may be blocking or `suspend`).
 
 ## Build & verify
 
@@ -82,6 +82,11 @@ Invariants worth preserving:
 - **Runtime overrides replace config bindings** for singleton parameters
   (`overrideExchange` wins in `dependenciesFor`) — that's how the server
   injects per-request history and streaming responders.
+- `TurnHost` (`server/`) is the seam for hosts that know who is asking: `identify`
+  a turn from transport metadata, choose the `history` it runs on, and wrap it in
+  `withTurn`. Defaults reproduce the stateless body-only behaviour, so the
+  adapter's policy (what a header means, what a turn may touch) stays in the
+  host and the transport (SSE, keep-alives, walk-away cancellation) stays here.
 - `EventProxy` observes suspend calls (wraps the caller's `Continuation`)
   and `Flow` streams (YIELD per chunk). Interface params get proxies,
   concrete-class params get raw instances (JDK proxies can't extend classes).
@@ -122,7 +127,11 @@ Invariants worth preserving:
 
 ## Out of scope — do not "helpfully" port these
 
-LiveKit/Bedrock/MCP glue, HuggingFace/SentenceTransformer embedders, the
+LiveKit/Bedrock glue, and an MCP *client* transport (a provider that speaks the
+MCP wire itself). A managed gateway that happens to front MCP servers is *not*
+that: it is a catalog read plus an invoke over REST, i.e. an ordinary
+`ToolProviderProtocol` in userland — do not "helpfully" skip it for the name.
+HuggingFace/SentenceTransformer embedders, the
 Svelte UI + GraphQL, `/v1/responses`, file-watching hot reload,
 `no_function_calling_adapter`, `claude_thinking` extras beyond the shared
 effort/budget mapping. These are SDK-bound or peripheral; the extension

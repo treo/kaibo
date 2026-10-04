@@ -87,7 +87,7 @@ One annotated function; the annotations are what the model reads:
 ```kotlin
 class WeatherTools {
     @KaiboTool(description = "Gets the current weather for a city")
-    fun weather(@KaiboParam("City name, e.g. 'Amsterdam'") city: String) =
+    suspend fun weather(@KaiboParam("City name, e.g. 'Amsterdam'") city: String) =
         fetchWeather(city)   // any JSON-shaped return value works
 }
 ```
@@ -96,6 +96,10 @@ class WeatherTools {
   compile error, not a silently worse agent.
 - Parameter types, names and requiredness come from the Kotlin signature;
   Kotlin enums become JSON-schema enums; defaults/nullability infer optional.
+- Tools may be `suspend`. Prefer it for anything doing real I/O: a suspend tool
+  is cancelled with the agent, so `call_timeout_ms` is a deadline it observes. A
+  *blocking* tool cannot be interrupted — after a timeout the agent walks away
+  and the call keeps running unseen, so its side effects must be idempotent.
 - Register code-side (`"tools" to listOf(WeatherTools())`) or config-side
   (`tool_classes: [com.example.WeatherTools]`) so YAML agents can use them.
 - No code available? `OneShotTools` defines a tool as a prompt template in
@@ -112,10 +116,12 @@ class WeatherTools {
 
 ## Scope — what was *not* ported, on purpose
 
-- **LiveKit, Bedrock, MCP**: SDK-bound integrations. The framework's
+- **LiveKit, Bedrock, MCP clients**: SDK-bound integrations. The framework's
   extension point is a ~50-line module implementing `LLMProtocol` or
   `ToolProviderProtocol`; porting the SDK glue is a user-side decision, not
-  core.
+  core. Caveat learned the hard way: a *managed tool gateway* that happens to
+  front MCP servers is not an MCP client — it is two REST calls (catalog, invoke)
+  and belongs in userland as an ordinary `ToolProviderProtocol`.
 - **HuggingFace / SentenceTransformer embedders**: no JVM equivalents worth
   the dependency weight; bring any model behind `EmbeddingProtocol`.
 - **Svelte UI, GraphQL adapter, `/v1/responses`, hot-reload file watching**:
@@ -147,6 +153,11 @@ src/main/kotlin/kaibo/
 agents/                         # ready-to-serve agent configs
 src/test/kotlin/kaibo/          # 48 tests documenting the framework's contracts
 ```
+
+The largest worked example lives next door:
+[`example-projects/platform-template-agents-kaibo`](../example-projects/platform-template-agents-kaibo)
+— ten production-style agent templates (PFC/Hippo/Thalamus/ACC orchestration,
+130–140 tools per template) ported from the Python `xaibo` templates.
 
 ## Notes for maintainers
 
